@@ -54,6 +54,7 @@ const PRECIO=140000, ABONO=80000*0+30000, DEPOSITO=80000, EXTRA_GRANDE=50000;
 const $=s=>document.querySelector(s), money=n=>"$"+Math.round(n).toLocaleString("es-CO");
 const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
 const hoyStr=()=>new Date().toLocaleDateString("sv");
+const SI="saldo-inicial",gReal=()=>gastos.filter(x=>x.id!==SI),saldoIni=()=>+(gastos.find(x=>x.id===SI)||{}).monto||0;
 let rentals=[],gastos=[],tab="cal",mesRef=new Date();mesRef.setDate(1);
 
 /* ====== ALMACENAMIENTO ====== */
@@ -128,19 +129,19 @@ function card(r){
  <div class="row"><span>Por cobrar: <b>${money(porCobrar(r))}</b></span><span>Depósito: ${r.depDevuelto?"devuelto":r.depRecibido?"retenido":"pendiente"}</span></div>${r.nota?`<div class="mut">📝 ${r.nota}</div>`:""}</div>`;
 }
 function vGas(){
- const l=[...gastos].sort((a,b)=>b.fecha.localeCompare(a.fecha));
+ const l=[...gReal()].sort((a,b)=>b.fecha.localeCompare(a.fecha));
  return `<button class="btn" data-newg="">Registrar gasto</button><h3>Gastos</h3>`+
  (l.length?l.map(g=>`<div class="card" data-g="${g.id}"><div class="row"><strong>${g.concepto}</strong><b>${money(g.monto)}</b></div><div class="mut">${g.fecha}</div></div>`).join(""):`<p class="mut">Aún no hay gastos. Registra lavado, transporte, reparaciones o compras.</p>`);
 }
 function vRes(){
  const ing=rentals.reduce((s,r)=>s+pagado(r),0),ent=rentals.reduce((s,r)=>s+entra(r),0);
- const g=gastos.reduce((s,x)=>s+(+x.monto||0),0),dav=ent-g;
+ const g=gReal().reduce((s,x)=>s+(+x.monto||0),0),ini=saldoIni(),dav=ini+ent-g;
  const pc=rentals.reduce((s,r)=>s+porCobrar(r),0),dr=rentals.reduce((s,r)=>s+depRet(r),0);
  const desc=rentals.reduce((s,r)=>s+(r.depDevuelto?+r.descuento||0:0),0);
  const tr=rentals.reduce((s,r)=>s+(r.abonoPagado||r.saldoPagado?+r.transporte||0:0),0);
  const ex=rentals.reduce((s,r)=>s+(r.abonoPagado||r.saldoPagado?+r.extra||0:0),0);
  return `<div class="card"><div class="mut">Deberías tener en DaviPlata</div><div class="big">${money(dav)}</div>
- <div class="mut">Incluye ${money(dr)} de depósitos que aún debes devolver. Tuyo de verdad: ${money(dav-dr)}.</div></div>
+ <div class="mut">Saldo inicial ${money(ini)} · Incluye ${money(dr)} de depósitos que aún debes devolver. Tuyo de verdad: ${money(dav-dr)}.</div></div>
  <div class="card"><table class="sum" style="width:100%"><tr><td>Alquileres cobrados (abonos y saldos)</td><td>${money(ing)}</td></tr>
  <tr><td>&nbsp;&nbsp;de eso, transportes cobrados</td><td>${money(tr)}</td></tr>
  <tr><td>&nbsp;&nbsp;de eso, extras (cilindro grande, etc.)</td><td>${money(ex)}</td></tr>
@@ -148,7 +149,7 @@ function vRes(){
  <tr><td>Gastos</td><td>−${money(g)}</td></tr>
  <tr><td><b>Ganancia</b></td><td><b>${money(ing+desc-g)}</b></td></tr>
  <tr><td>Por cobrar a clientes</td><td>${money(pc)}</td></tr></table></div>
- <button class="btn s" id="exp">Descargar respaldo (JSON)</button>`;
+ <button class="btn s" id="ini">Saldo inicial de DaviPlata</button><div style="height:8px"></div><button class="btn s" id="exp">Descargar respaldo (JSON)</button>`;
 }
 
 /* ====== FORMULARIOS ====== */
@@ -199,7 +200,7 @@ function formG(g){
 
 /* ====== EVENTOS ====== */
 document.addEventListener("click",e=>{
- const t=e.target.closest("[data-t],[data-m],[data-f],[data-new],[data-newg],[data-id],[data-g],#exp");if(!t)return;
+ const t=e.target.closest("[data-t],[data-m],[data-f],[data-new],[data-newg],[data-id],[data-g],#exp,#ini");if(!t)return;
  if(t.dataset.t){tab=t.dataset.t;render()}
  else if(t.dataset.m!==undefined){mesRef.setMonth(mesRef.getMonth()+ +t.dataset.m);render()}
  else if(t.dataset.f){const rs=rentals.filter(r=>r.fecha===t.dataset.f);rs.length?formR(rs[0]):formR(null,t.dataset.f)}
@@ -207,6 +208,7 @@ document.addEventListener("click",e=>{
  else if(t.dataset.newg!==undefined)formG(null)
  else if(t.dataset.id)formR(rentals.find(r=>r.id===t.dataset.id))
  else if(t.dataset.g)formG(gastos.find(g=>g.id===t.dataset.g))
+ else if(t.id==="ini"){const v=prompt("¿Cuánta plata había en DaviPlata antes de empezar a usar la app?",saldoIni()||651000);if(v!==null&&!isNaN(+v.replace(/[.,\s]/g,"")))store.save("gastos",{id:SI,concepto:"Saldo inicial DaviPlata",monto:+v.replace(/[.,\s]/g,""),fecha:hoyStr()})}
  else if(t.id==="exp"){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify({rentals,gastos},null,1)],{type:"application/json"}));a.download="respaldo-alquileres.json";a.click()}
 });
 await store.init();render();
