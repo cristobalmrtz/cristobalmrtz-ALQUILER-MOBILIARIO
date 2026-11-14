@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Alquiler de Fiestas</title>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+:root{--ink:#1f1a2e;--paper:#faf7ff;--card:#fff;--line:#e3dcf0;--mag:#c2185b;--mint:#0f9d8a;--amb:#e59b00;--mut:#6f6785}
+@media(prefers-color-scheme:dark){:root{--ink:#f3eefc;--paper:#16121f;--card:#211b2f;--line:#352d4a;--mut:#a79fc0}}
+*{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:16px/1.4 "Bricolage Grotesque",system-ui,sans-serif;padding:env(safe-area-inset-top) 0 80px}
+header{padding:18px 16px 6px}h1{margin:0;font-size:26px;font-weight:800}
+#modo{font-size:13px;color:var(--mut);margin-top:4px}
+nav{display:flex;gap:6px;padding:8px 16px;position:sticky;top:0;background:var(--paper);z-index:5}
+nav button{flex:1;padding:10px;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;font:inherit;font-weight:600}
+nav button.on{background:var(--ink);color:var(--paper)}
+main{padding:8px 16px;max-width:640px;margin:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px;margin:10px 0}
+.cal{display:grid;grid-template-columns:repeat(7,1fr);gap:4px}
+.cal b{font-size:12px;color:var(--mut);text-align:center;font-weight:600}
+.d{aspect-ratio:1;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:inherit;padding:4px;display:flex;flex-direction:column;align-items:center;justify-content:space-between}
+.d.hoy{border:2px solid var(--ink)}.d i{width:100%;height:6px;border-radius:3px}
+.sin{background:var(--amb)}.ab{background:var(--mint)}.ok{background:var(--mut)}
+.mes{display:flex;justify-content:space-between;align-items:center;margin:6px 0}
+.mes button{border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:10px;padding:8px 14px;font:inherit}
+.lg{font-size:13px;color:var(--mut);display:flex;gap:12px;flex-wrap:wrap;margin:8px 0}.lg span:before{content:"";display:inline-block;width:10px;height:10px;border-radius:5px;margin-right:5px;background:var(--c)}
+.row{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.pill{font-size:12px;padding:2px 8px;border-radius:99px;color:#fff;font-weight:600}
+.big{font-size:34px;font-weight:800}.mut{color:var(--mut);font-size:14px}
+.btn{background:var(--mag);color:#fff;border:0;border-radius:12px;padding:12px 16px;font:inherit;font-weight:600;width:100%}
+.btn.s{background:var(--card);color:var(--ink);border:1px solid var(--line)}.btn.r{background:#b3261e}
+label{display:block;font-size:13px;color:var(--mut);margin:10px 0 4px}
+input,select,textarea{width:100%;padding:10px;border:1px solid var(--line);border-radius:10px;background:var(--paper);color:var(--ink);font:inherit}
+.chk{display:flex;align-items:center;gap:10px;margin:10px 0;color:var(--ink);font-size:16px}.chk input{width:22px;height:22px}
+dialog{border:0;border-radius:16px;padding:16px;width:min(94vw,520px);max-height:92vh;background:var(--card);color:var(--ink)}
+dialog::backdrop{background:#0008}
+.g2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.sum td{padding:6px 0}.sum td:last-child{text-align:right;font-weight:600}
+:focus-visible{outline:3px solid var(--mag);outline-offset:2px}
+</style>
+</head>
+<body>
+<header><h1>Alquiler de Fiestas</h1><div id="modo"></div></header>
+<nav><button data-t="cal" class="on">Calendario</button><button data-t="gas">Gastos</button><button data-t="res">Resumen</button></nav>
+<main id="app"></main>
+<dialog id="dlg"></dialog>
+
+<script type="module">
+/* ====== CONEXIÓN CON EL EXCEL (Google Sheets) ======
+   Pega aquí el link de tu Apps Script (termina en /exec) y la misma clave que pusiste en Code.gs. */
+const CONFIG={ URL:"https://script.google.com/macros/s/AKfycbzEgEeoOMiAjmfQ8UFcP_XqU-HrgmhEE5kZ3ocOx0492yTMdMRLx0OI32kwSn7qv5QD/exec", CLAVE:"01072014" };
+
+const PRECIO=140000, ABONO=80000*0+30000, DEPOSITO=80000, EXTRA_GRANDE=50000;
+const $=s=>document.querySelector(s), money=n=>"$"+Math.round(n).toLocaleString("es-CO");
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const hoyStr=()=>new Date().toLocaleDateString("sv");
+let rentals=[],gastos=[],tab="cal",mesRef=new Date();mesRef.setDate(1);
+
+/* ====== ALMACENAMIENTO ====== */
+const cloud=!!CONFIG.URL;let err="";
+const hoja=c=>c==="rentals"?"Alquileres":"Gastos";
+const post=b=>fetch(CONFIG.URL,{method:"POST",headers:{"Content-Type":"text/plain"},body:JSON.stringify({...b,k:CONFIG.CLAVE})}).then(r=>r.json()).then(j=>{if(j.error)throw j.error;return j});
+const store={
+ async load(){
+  const j=await(await fetch(CONFIG.URL+"?k="+encodeURIComponent(CONFIG.CLAVE))).json();
+  if(j.error)throw j.error;rentals=j.rentals;gastos=j.gastos;err="";render();
+ },
+ async init(){
+  if(cloud){
+   try{await store.load();setInterval(()=>store.load().catch(()=>{}),20000)}
+   catch(e){err="No se pudo conectar con el Excel: "+e;render()}
+  }else{
+   rentals=JSON.parse(localStorage.getItem("rentals")||"[]");
+   gastos=JSON.parse(localStorage.getItem("gastos")||"[]");
+  }
+ },
+ async save(col,o){
+  const a=col==="rentals"?rentals:gastos,i=a.findIndex(x=>x.id===o.id);i<0?a.push(o):a[i]=o;render();
+  if(cloud){try{await post({op:"save",col:hoja(col),id:o.id,data:o})}catch(e){alert("No se guardó en el Excel: "+e)}}
+  else localStorage.setItem(col,JSON.stringify(a));
+ },
+ async del(col,id){
+  const a=(col==="rentals"?rentals:gastos).filter(x=>x.id!==id);
+  if(col==="rentals")rentals=a;else gastos=a;render();
+  if(cloud){try{await post({op:"del",col:hoja(col),id})}catch(e){alert("No se borró en el Excel: "+e)}}
+  else localStorage.setItem(col,JSON.stringify(a));
+ }
+};
+
+/* ====== CÁLCULOS ====== */
+const total=r=>(+r.base||0)+(+r.extra||0)+(+r.transporte||0);
+const pagado=r=>r.saldoPagado?total(r):(r.abonoPagado?+r.abono||0:0);
+const porCobrar=r=>total(r)-pagado(r);
+const depRet=r=>r.depRecibido&&!r.depDevuelto?+r.deposito||0:0;
+const devuelto=r=>r.depDevuelto?(+r.deposito||0)-(+r.descuento||0):0;
+const entra=r=>pagado(r)+(r.depRecibido?+r.deposito||0:0)-devuelto(r);
+const estado=r=>r.saldoPagado&&(!r.depRecibido||r.depDevuelto)?"ok":(r.abonoPagado?"ab":"sin");
+
+/* ====== VISTAS ====== */
+function render(){
+ $("#modo").textContent=err||(cloud?"Conectado al Excel (Google Sheets)":"Sin conexión al Excel: guardando solo en este dispositivo");
+ document.querySelectorAll("nav button").forEach(b=>b.classList.toggle("on",b.dataset.t===tab));
+ $("#app").innerHTML=tab==="cal"?vCal():tab==="gas"?vGas():vRes();
+}
+function vCal(){
+ const y=mesRef.getFullYear(),m=mesRef.getMonth(),n=new Date(y,m+1,0).getDate(),off=(mesRef.getDay()+6)%7;
+ const nom=mesRef.toLocaleDateString("es-CO",{month:"long",year:"numeric"});
+ let h=`<div class="mes"><button data-m="-1" aria-label="Mes anterior">‹</button><strong>${nom}</strong><button data-m="1" aria-label="Mes siguiente">›</button></div><div class="cal">`;
+ "LMMJVSD".split("").forEach(d=>h+=`<b>${d}</b>`);
+ for(let i=0;i<off;i++)h+="<span></span>";
+ for(let d=1;d<=n;d++){
+  const f=`${y}-${String(m+1).padStart(2,"0")}-${String(d).padStart(2,"0")}`,rs=rentals.filter(r=>r.fecha===f);
+  const c=rs.length?(rs.some(r=>estado(r)==="sin")?"sin":rs.some(r=>estado(r)==="ab")?"ab":"ok"):"";
+  h+=`<button class="d ${f===hoyStr()?"hoy":""}" data-f="${f}"><span>${d}</span>${c?`<i class="${c}"></i>`:"<i></i>"}</button>`;
+ }
+ h+=`</div><div class="lg"><span style="--c:var(--amb)">Sin abono</span><span style="--c:var(--mint)">Abonado</span><span style="--c:var(--mut)">Pagado y cerrado</span></div>`;
+ const prox=rentals.filter(r=>r.fecha>=hoyStr()).sort((a,b)=>a.fecha.localeCompare(b.fecha));
+ h+=`<button class="btn" data-new="">Nuevo alquiler</button><h3>Próximos alquileres</h3>`;
+ h+=prox.length?prox.map(card).join(""):`<p class="mut">No hay alquileres próximos. Toca un día del calendario para agendar.</p>`;
+ const ant=rentals.filter(r=>r.fecha<hoyStr()&&(porCobrar(r)>0||depRet(r)>0));
+ if(ant.length)h+=`<h3>Pendientes de fechas pasadas</h3>`+ant.map(card).join("");
+ return h;
+}
+function card(r){
+ const e=estado(r),t={sin:"Sin abono",ab:"Abonado",ok:"Cerrado"}[e];
+ return `<div class="card" data-id="${r.id}"><div class="row"><strong>${r.cliente}</strong><span class="pill ${e}">${t}</span></div>
+ <div class="mut">${new Date(r.fecha+"T12:00").toLocaleDateString("es-CO",{weekday:"long",day:"numeric",month:"short"})} · ${r.recoge?"Ellos recogen":"Entrega nuestra"}</div>
+ <div class="row"><span>Por cobrar: <b>${money(porCobrar(r))}</b></span><span>Depósito: ${r.depDevuelto?"devuelto":r.depRecibido?"retenido":"pendiente"}</span></div>${r.nota?`<div class="mut">📝 ${r.nota}</div>`:""}</div>`;
+}
+function vGas(){
+ const l=[...gastos].sort((a,b)=>b.fecha.localeCompare(a.fecha));
+ return `<button class="btn" data-newg="">Registrar gasto</button><h3>Gastos</h3>`+
+ (l.length?l.map(g=>`<div class="card" data-g="${g.id}"><div class="row"><strong>${g.concepto}</strong><b>${money(g.monto)}</b></div><div class="mut">${g.fecha}</div></div>`).join(""):`<p class="mut">Aún no hay gastos. Registra lavado, transporte, reparaciones o compras.</p>`);
+}
+function vRes(){
+ const ing=rentals.reduce((s,r)=>s+pagado(r),0),ent=rentals.reduce((s,r)=>s+entra(r),0);
+ const g=gastos.reduce((s,x)=>s+(+x.monto||0),0),dav=ent-g;
+ const pc=rentals.reduce((s,r)=>s+porCobrar(r),0),dr=rentals.reduce((s,r)=>s+depRet(r),0);
+ const desc=rentals.reduce((s,r)=>s+(r.depDevuelto?+r.descuento||0:0),0);
+ const tr=rentals.reduce((s,r)=>s+(r.abonoPagado||r.saldoPagado?+r.transporte||0:0),0);
+ const ex=rentals.reduce((s,r)=>s+(r.abonoPagado||r.saldoPagado?+r.extra||0:0),0);
+ return `<div class="card"><div class="mut">Deberías tener en DaviPlata</div><div class="big">${money(dav)}</div>
+ <div class="mut">Incluye ${money(dr)} de depósitos que aún debes devolver. Tuyo de verdad: ${money(dav-dr)}.</div></div>
+ <div class="card"><table class="sum" style="width:100%"><tr><td>Alquileres cobrados (abonos y saldos)</td><td>${money(ing)}</td></tr>
+ <tr><td>&nbsp;&nbsp;de eso, transportes cobrados</td><td>${money(tr)}</td></tr>
+ <tr><td>&nbsp;&nbsp;de eso, extras (cilindro grande, etc.)</td><td>${money(ex)}</td></tr>
+ <tr><td>Descuentos por daños (de depósitos)</td><td>${money(desc)}</td></tr>
+ <tr><td>Gastos</td><td>−${money(g)}</td></tr>
+ <tr><td><b>Ganancia</b></td><td><b>${money(ing+desc-g)}</b></td></tr>
+ <tr><td>Por cobrar a clientes</td><td>${money(pc)}</td></tr></table></div>
+ <button class="btn s" id="exp">Descargar respaldo (JSON)</button>`;
+}
+
+/* ====== FORMULARIOS ====== */
+const val=(id)=>$("#"+id).value, chk=(id)=>$("#"+id).checked;
+function formR(r,fecha){
+ const n=!r;r=r||{id:uid(),cliente:"",tel:"",fecha:fecha||hoyStr(),base:PRECIO,extra:0,transporte:0,abono:ABONO,abonoPagado:false,saldoPagado:false,deposito:DEPOSITO,depRecibido:false,depDevuelto:false,descuento:0,recoge:true,nota:""};
+ const d=$("#dlg");
+ d.innerHTML=`<h2 style="margin-top:0">${n?"Nuevo alquiler":"Alquiler"}</h2>
+ <label>Cliente</label><input id="cliente" value="${r.cliente}">
+ <div class="g2"><div><label>Teléfono</label><input id="tel" inputmode="tel" value="${r.tel}"></div><div><label>Fecha</label><input id="fecha" type="date" value="${r.fecha}"></div></div>
+ <div class="g2"><div><label>Alquiler (3 cilindros, arco, 4 fundas)</label><input id="base" type="number" inputmode="numeric" value="${r.base}"></div>
+ <div><label>Extra (ej. cilindro grande +50.000)</label><input id="extra" type="number" inputmode="numeric" value="${r.extra}"></div></div>
+ <div class="g2"><div><label>Transporte cobrado</label><input id="transporte" type="number" inputmode="numeric" value="${r.transporte}"></div>
+ <div><label>Valor del abono</label><input id="abono" type="number" inputmode="numeric" value="${r.abono}"></div></div>
+ <label class="chk"><input id="abonoPagado" type="checkbox" ${r.abonoPagado?"checked":""}>Ya abonó</label>
+ <label class="chk"><input id="saldoPagado" type="checkbox" ${r.saldoPagado?"checked":""}>Pagó el saldo completo</label>
+ <div class="g2"><div><label>Depósito</label><input id="deposito" type="number" inputmode="numeric" value="${r.deposito}"></div>
+ <div><label>Descuento por daños</label><input id="descuento" type="number" inputmode="numeric" value="${r.descuento}"></div></div>
+ <label class="chk"><input id="depRecibido" type="checkbox" ${r.depRecibido?"checked":""}>Depósito recibido (día de entrega)</label>
+ <label class="chk"><input id="depDevuelto" type="checkbox" ${r.depDevuelto?"checked":""}>Depósito devuelto (todo regresó bien)</label>
+ <label class="chk"><input id="recoge" type="checkbox" ${r.recoge?"checked":""}>Ellos recogen (si no, lo llevamos)</label>
+ <label>Notas</label><textarea id="nota" rows="2">${r.nota}</textarea>
+ <p class="mut" id="tot"></p>
+ <button class="btn" id="ok">Guardar</button><div style="height:8px"></div>
+ <button class="btn s" id="no">Cancelar</button>${n?"":`<div style="height:8px"></div><button class="btn r" id="del">Eliminar</button>`}`;
+ const tot=()=>{$("#tot").textContent="Total del alquiler: "+money((+val("base")||0)+(+val("extra")||0)+(+val("transporte")||0))};
+ d.oninput=tot;tot();d.showModal();
+ $("#no").onclick=()=>d.close();
+ if(!n)$("#del").onclick=async()=>{if(confirm("¿Eliminar este alquiler?")){await store.del("rentals",r.id);d.close()}};
+ $("#ok").onclick=async()=>{
+  if(!val("cliente").trim())return alert("Escribe el nombre del cliente");
+  const o={id:r.id,cliente:val("cliente").trim(),tel:val("tel"),fecha:val("fecha"),base:+val("base")||0,extra:+val("extra")||0,transporte:+val("transporte")||0,abono:+val("abono")||0,abonoPagado:chk("abonoPagado")||chk("saldoPagado"),saldoPagado:chk("saldoPagado"),deposito:+val("deposito")||0,descuento:+val("descuento")||0,depRecibido:chk("depRecibido")||chk("depDevuelto"),depDevuelto:chk("depDevuelto"),recoge:chk("recoge"),nota:val("nota")};
+  const choque=rentals.find(x=>x.fecha===o.fecha&&x.id!==o.id);
+  if(choque&&!confirm(`Ya hay un alquiler ese día (${choque.cliente}). ¿Guardar de todos modos?`))return;
+  await store.save("rentals",o);d.close();
+ };
+}
+function formG(g){
+ const n=!g;g=g||{id:uid(),concepto:"",monto:"",fecha:hoyStr()};const d=$("#dlg");
+ d.innerHTML=`<h2 style="margin-top:0">${n?"Nuevo gasto":"Gasto"}</h2><label>Concepto</label><input id="concepto" value="${g.concepto}" placeholder="Lavado de fundas, gasolina…">
+ <div class="g2"><div><label>Monto</label><input id="monto" type="number" inputmode="numeric" value="${g.monto}"></div><div><label>Fecha</label><input id="fecha" type="date" value="${g.fecha}"></div></div>
+ <div style="height:12px"></div><button class="btn" id="ok">Guardar</button><div style="height:8px"></div><button class="btn s" id="no">Cancelar</button>${n?"":`<div style="height:8px"></div><button class="btn r" id="del">Eliminar</button>`}`;
+ d.oninput=null;d.showModal();$("#no").onclick=()=>d.close();
+ if(!n)$("#del").onclick=async()=>{if(confirm("¿Eliminar este gasto?")){await store.del("gastos",g.id);d.close()}};
+ $("#ok").onclick=async()=>{if(!val("concepto").trim()||!(+val("monto")>0))return alert("Escribe el concepto y el monto");
+  await store.save("gastos",{id:g.id,concepto:val("concepto").trim(),monto:+val("monto"),fecha:val("fecha")});d.close()};
+}
+
+/* ====== EVENTOS ====== */
+document.addEventListener("click",e=>{
+ const t=e.target.closest("[data-t],[data-m],[data-f],[data-new],[data-newg],[data-id],[data-g],#exp");if(!t)return;
+ if(t.dataset.t){tab=t.dataset.t;render()}
+ else if(t.dataset.m!==undefined){mesRef.setMonth(mesRef.getMonth()+ +t.dataset.m);render()}
+ else if(t.dataset.f){const rs=rentals.filter(r=>r.fecha===t.dataset.f);rs.length?formR(rs[0]):formR(null,t.dataset.f)}
+ else if(t.dataset.new!==undefined)formR(null)
+ else if(t.dataset.newg!==undefined)formG(null)
+ else if(t.dataset.id)formR(rentals.find(r=>r.id===t.dataset.id))
+ else if(t.dataset.g)formG(gastos.find(g=>g.id===t.dataset.g))
+ else if(t.id==="exp"){const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify({rentals,gastos},null,1)],{type:"application/json"}));a.download="respaldo-alquileres.json";a.click()}
+});
+await store.init();render();
+</script>
+</body>
+</html>
